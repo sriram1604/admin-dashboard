@@ -1,0 +1,286 @@
+import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+
+export const listEmployees = query({
+  args: {
+    paginationOpts: v.any(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.query("employee").paginate(args.paginationOpts);
+  },
+});
+
+export const getEmployees = query({
+    args: {},
+    handler: async (ctx) => {
+        return await ctx.db.query("employee").collect();
+    }
+})
+
+export const getEmployeeById = query({
+    args: { id: v.id("employee") },
+    handler: async (ctx, args) => {
+        return await ctx.db.get(args.id);
+    }
+})
+
+export const createEmployee = mutation({
+    args: {
+        name: v.string(),
+        email: v.optional(v.string()),
+        phonenumber: v.string(),
+        employeeId: v.string(),
+        role: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const parts = args.name.split(" ");
+        const firstname = parts[0];
+        const lastname = parts.slice(1).join(" ") || " ";
+        
+        const existing = await ctx.db
+            .query("employee")
+            .withIndex("by_phonenumber", (q) => q.eq("phonenumber", args.phonenumber))
+            .first();
+        
+        if (existing) {
+            throw new Error("Employee with this phone number already exists");
+        }
+
+        return await ctx.db.insert("employee", {
+            firstname,
+            lastname,
+            phonenumber: args.phonenumber,
+            email: args.email,
+            employeeId: args.employeeId,
+            role: args.role,
+            status: "active",
+            joiningDate: Date.now(),
+            aadharCardnumber: "NOT_PROVIDED", // Default for now
+            password: "pks" + args.phonenumber.slice(-4), // Simple default password
+        });
+    }
+})
+
+export const updateEmployee = mutation({
+    args: {
+        id: v.id("employee"),
+        firstname: v.optional(v.string()),
+        lastname: v.optional(v.string()),
+        email: v.optional(v.string()),
+        phonenumber: v.optional(v.string()),
+        employeeId: v.optional(v.string()),
+        role: v.optional(v.string()),
+        status: v.optional(v.string()),
+        joiningDate: v.optional(v.number()),
+        aadharCardnumber: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const { id, ...data } = args;
+        await ctx.db.patch(id, data);
+    }
+})
+
+export const getEmployeeDetails = query({
+    args: { employeeId: v.id("employee") },
+    handler: async (ctx, args) => {
+        console.log("Getting details for employee:", args.employeeId);
+        const employee = await ctx.db.get(args.employeeId);
+        if (!employee) {
+            console.log("Employee not found");
+            return null;
+        }
+
+        const records = await ctx.db
+            .query("attendance")
+            .withIndex("by_employeeId", (q) => q.eq("employeeId", args.employeeId))
+            .collect();
+
+        const totalDays = records.length;
+        const presentDays = records.filter(r => r.status === "present").length;
+        const absentDays = records.filter(r => r.status === "absent").length;
+
+        const lastCheckIn = records
+            .filter(r => r.attendanceTime)
+            .sort((a, b) => (b.attendanceTime || 0) - (a.attendanceTime || 0))[0]?.attendanceTime;
+        
+        const lastCheckOut = records
+            .filter(r => r.checkoutTime)
+            .sort((a, b) => (b.checkoutTime || 0) - (a.checkoutTime || 0))[0]?.checkoutTime;
+
+        return {
+            ...employee,
+            attendanceSummary: {
+                totalDays,
+                presentDays,
+                absentDays,
+                presentPercentage: totalDays > 0 ? (presentDays / totalDays) * 100 : 0
+            },
+            lastCheckIn,
+            lastCheckOut
+        };
+    }
+})
+
+export const listAttendance = query({
+  args: {
+    paginationOpts: v.any(),
+    dateString: v.optional(v.string()),
+    status: v.optional(v.string()),
+    employeeId: v.optional(v.id("employee")),
+  },
+  handler: async (ctx, args) => {
+    let results;
+    if (args.dateString) {
+      results = await ctx.db
+        .query("attendance")
+        .withIndex("by_dateString", (q) => q.eq("dateString", args.dateString!))
+        .paginate(args.paginationOpts);
+    } else if (args.employeeId) {
+      results = await ctx.db
+        .query("attendance")
+        .withIndex("by_employeeId", (q) => q.eq("employeeId", args.employeeId!))
+        .paginate(args.paginationOpts);
+    } else {
+      results = await ctx.db.query("attendance").order("desc").paginate(args.paginationOpts);
+    }
+    
+    // Join with employee data
+    const pageWithEmployees = await Promise.all(
+      results.page.map(async (record) => {
+        const employee = await ctx.db.get(record.employeeId);
+        return {
+          ...record,
+          employeeName: employee ? `${employee.firstname} ${employee.lastname}` : "Unknown",
+          employeePhone: employee?.phonenumber,
+          photoUrl: employee?.photoUrl,
+        };
+      })
+    );
+
+    return { ...results, page: pageWithEmployees };
+  },
+});
+
+export const getDashboardStats = query({
+    args: {},
+    handler: async (ctx) => {
+        const totalEmployees = (await ctx.db.query("employee").collect()).length;
+        
+        // Safe way to get YYYY-MM-DD in IST
+        const now = new Date();
+        const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+        const dateString = istTime.toISOString().split('T')[0];
+
+        const todayAttendance = await ctx.db
+            .query("attendance")
+            .withIndex("by_dateString", (q) => q.eq("dateString", dateString))
+            .collect();
+
+        const presentToday = todayAttendance.filter(r => r.status === "present").length;
+        const absentToday = todayAttendance.filter(r => r.status === "absent").length;
+        const pendingToday = todayAttendance.filter(r => r.status === "pending").length;
+
+        return {
+            totalEmployees,
+            presentToday,
+            absentToday,
+            pendingToday,
+            dateString
+        };
+    }
+})
+
+export const insertNotification = mutation({
+  args: {
+    employeeId: v.id("employee"),
+    title: v.string(),
+    body: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("notifications", {
+      employeeId: args.employeeId,
+      title: args.title,
+      body: args.body,
+      read: false,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const getNotifications = query({
+    args: { employeeId: v.id("employee") },
+    handler: async (ctx, args) => {
+        return await ctx.db
+            .query("notifications")
+            .withIndex("by_employeeId", (q) => q.eq("employeeId", args.employeeId))
+            .order("desc")
+            .collect();
+    }
+})
+
+export const getAbsentReasons = query({
+    args: {},
+    handler: async (ctx) => {
+        const records = await ctx.db
+            .query("attendance")
+            .filter((q) => q.and(
+                q.eq(q.field("status"), "absent"),
+                q.neq(q.field("reason"), undefined)
+            ))
+            .order("desc")
+            .take(10); // Get latest 10 reasons
+
+        return await Promise.all(
+            records.map(async (record) => {
+                const employee = await ctx.db.get(record.employeeId);
+                return {
+                    ...record,
+                    employeeName: employee ? `${employee.firstname} ${employee.lastname}` : "Unknown Employee",
+                    employeePhoto: employee?.photoUrl,
+                };
+            })
+        );
+    }
+})
+export const getAttendanceExport = query({
+  args: {
+    startDate: v.optional(v.string()), // YYYY-MM-DD
+    endDate: v.optional(v.string()),   // YYYY-MM-DD
+  },
+  handler: async (ctx, args) => {
+    let records;
+    
+    if (args.startDate && args.endDate) {
+      records = await ctx.db.query("attendance")
+        .withIndex("by_dateString", (query) => 
+          query.gte("dateString", args.startDate!).lte("dateString", args.endDate!)
+        )
+        .collect();
+    } else if (args.startDate) {
+      records = await ctx.db.query("attendance")
+        .withIndex("by_dateString", (query) => 
+          query.gte("dateString", args.startDate!)
+        )
+        .collect();
+    } else {
+      records = await ctx.db.query("attendance")
+        .withIndex("by_dateString")
+        .order("desc")
+        .collect();
+    }
+
+    // Join with employee data
+    return await Promise.all(
+      records.map(async (record) => {
+        const employee = await ctx.db.get(record.employeeId);
+        return {
+          ...record,
+          employeeName: employee ? `${employee.firstname} ${employee.lastname}` : "Unknown",
+          employeePhone: employee?.phonenumber,
+          employeeIdTag: employee?.employeeId,
+          role: employee?.role,
+        };
+      })
+    );
+  },
+});

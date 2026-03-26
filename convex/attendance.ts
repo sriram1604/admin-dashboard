@@ -9,6 +9,7 @@ export const markAttendance = mutation({
     long: v.number(),
     city: v.string(),
     address: v.string(),
+    isOT: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     // Find employee by phone number
@@ -28,10 +29,17 @@ export const markAttendance = mutation({
       hour: "numeric",
       hour12: false,
     }).format(now);
+    const currentMinStr = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Kolkata",
+      minute: "numeric",
+    }).format(now);
     const hourInt = parseInt(currentHourStr);
+    const minInt = parseInt(currentMinStr);
 
-    if (hourInt < 6 || hourInt >= 12) {
-      throw new Error("Attendance marking is only allowed between 6:00 AM and 12:00 PM IST.");
+    if (hourInt < 6 || (hourInt === 10 && minInt > 0) || hourInt > 10) {
+      throw new Error(
+        "Attendance marking is only allowed between 6:00 AM and 10:00 AM IST.",
+      );
     }
 
     const todayLocal = new Date().toLocaleDateString("en-US", {
@@ -58,25 +66,44 @@ export const markAttendance = mutation({
       }
 
       // Update existing pending to present
-      await ctx.db.patch(existingAttendance._id, {
+      const updateData: any = {
         lat: args.lat,
         long: args.long,
         city: args.city,
         address: args.address,
         attendanceTime: now,
         status: "present",
-      });
+        isOT: args.isOT,
+      };
 
-      // Schedule a checkout reminder 8 hours from now
-      await ctx.scheduler.runAfter(8 * 60 * 60 * 1000, internal.notifications.sendCheckoutReminder, {
-        employeeId: employee._id,
-      });
+      if (args.isOT === false) {
+        const todayLocalStr = new Date().toLocaleDateString("en-US", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" });
+        const [m, d, y] = todayLocalStr.split("/");
+        const sixPM_IST_epoch = new Date(`${y}-${m}-${d}T18:00:00+05:30`).getTime();
+        updateData.checkoutTime = Math.min(now + 8 * 60 * 60 * 1000, sixPM_IST_epoch);
+        updateData.otMinutes = 0;
+        updateData.hasOT = false;
+        updateData.autoCheckout = true;
+      }
+
+      await ctx.db.patch(existingAttendance._id, updateData);
+
+      if (args.isOT !== false) {
+        // Schedule a checkout reminder 8 hours from now
+        await ctx.scheduler.runAfter(
+          8 * 60 * 60 * 1000,
+          internal.notifications.sendCheckoutReminder,
+          {
+            employeeId: employee._id,
+          },
+        );
+      }
 
       return { success: true, message: "Attendance updated to present" };
     }
 
     // Insert new attendance
-    await ctx.db.insert("attendance", {
+    const insertData: any = {
       employeeId: employee._id,
       lat: args.lat,
       long: args.long,
@@ -85,17 +112,35 @@ export const markAttendance = mutation({
       attendanceTime: now,
       status: "present",
       dateString,
-    });
+      isOT: args.isOT,
+    };
 
-    // Schedule a checkout reminder 8 hours from now
-    await ctx.scheduler.runAfter(8 * 60 * 60 * 1000, internal.notifications.sendCheckoutReminder, {
-      employeeId: employee._id,
-    });
+    if (args.isOT === false) {
+      const todayLocalStr = new Date().toLocaleDateString("en-US", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" });
+      const [m, d, y] = todayLocalStr.split("/");
+      const sixPM_IST_epoch = new Date(`${y}-${m}-${d}T18:00:00+05:30`).getTime();
+      insertData.checkoutTime = Math.min(now + 8 * 60 * 60 * 1000, sixPM_IST_epoch);
+      insertData.otMinutes = 0;
+      insertData.hasOT = false;
+      insertData.autoCheckout = true;
+    }
+
+    await ctx.db.insert("attendance", insertData);
+
+    if (args.isOT !== false) {
+      // Schedule a checkout reminder 8 hours from now
+      await ctx.scheduler.runAfter(
+        8 * 60 * 60 * 1000,
+        internal.notifications.sendCheckoutReminder,
+        {
+          employeeId: employee._id,
+        },
+      );
+    }
 
     return { success: true, message: "Attendance marked successfully" };
   },
 });
-
 
 export const getTodayAttendance = query({
   args: { employeeId: v.optional(v.id("employee")) },
@@ -182,12 +227,14 @@ export const markCheckout = mutation({
 
     const checkoutTime = Date.now();
 
-    // 4 PM IST on the same day
-    const fourPMTime = new Date(`${dateString}T16:00:00+05:30`).getTime();
+    const checkinTime = existing.attendanceTime || existing._creationTime;
+    const totalDurationMins = Math.floor(
+      (checkoutTime - checkinTime) / (1000 * 60),
+    );
 
     let otDurationMinutes = 0;
-    if (checkoutTime > fourPMTime) {
-      otDurationMinutes = Math.floor((checkoutTime - fourPMTime) / (1000 * 60));
+    if (existing.isOT === true && totalDurationMins > 8 * 60) {
+      otDurationMinutes = totalDurationMins - 8 * 60;
     }
 
     const hasOT = otDurationMinutes > 0;
@@ -196,6 +243,8 @@ export const markCheckout = mutation({
       checkoutTime,
       hasOT,
       otDurationMinutes,
+      isOT: existing.isOT,
+      otMinutes: otDurationMinutes,
     });
 
     const otHours = Math.floor(otDurationMinutes / 60);
@@ -257,7 +306,7 @@ export const createDailyAttendance = internalMutation({
   handler: async (ctx) => {
     // Skip Sundays (day 0 in IST)
     const nowIST = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }),
     );
     if (nowIST.getDay() === 0) return; // 0 = Sunday
 
@@ -296,7 +345,7 @@ export const markAbsentAttendance = internalMutation({
   handler: async (ctx) => {
     // Skip Sundays (day 0 in IST)
     const nowIST = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }),
     );
     if (nowIST.getDay() === 0) return; // 0 = Sunday
 
@@ -330,7 +379,7 @@ export const autoCheckoutMissing = internalMutation({
   handler: async (ctx) => {
     // Skip Sundays (day 0 in IST)
     const nowIST = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }),
     );
     if (nowIST.getDay() === 0) return; // 0 = Sunday
 
@@ -343,29 +392,89 @@ export const autoCheckoutMissing = internalMutation({
     const [month, day, year] = todayLocal.split("/");
     const dateString = `${year}-${month}-${day}`;
 
-    // Get all present attendance without checkoutTime for today
-    const records = await ctx.db
+    // For pending records, they should have been marked absent at 10:01 AM by markAbsentAttendance
+    // But as a fallback, mark remaining pending as absent
+    const pendingRecords = await ctx.db
+      .query("attendance")
+      .withIndex("by_dateString", (q) => q.eq("dateString", dateString))
+      .filter((q) => q.eq(q.field("status"), "pending"))
+      .collect();
+
+    for (const record of pendingRecords) {
+      await ctx.db.patch(record._id, {
+        status: "absent",
+      });
+    }
+
+    // Process Missing Checkouts
+    const presentRecords = await ctx.db
       .query("attendance")
       .withIndex("by_dateString", (q) => q.eq("dateString", dateString))
       .filter((q) => q.eq(q.field("status"), "present"))
       .collect();
 
-    // Calculate OT up to 11:00 PM
-    const checkoutTime = new Date(`${dateString}T23:00:00+05:30`).getTime();
-    const fourPMTime = new Date(`${dateString}T16:00:00+05:30`).getTime();
+    const currentCronTime = Date.now();
 
-    let otDurationMinutes = 0;
-    if (checkoutTime > fourPMTime) {
-      otDurationMinutes = Math.floor((checkoutTime - fourPMTime) / (1000 * 60));
-    }
-    const hasOT = otDurationMinutes > 0;
-
-    for (const record of records) {
+    for (const record of presentRecords) {
       if (!record.checkoutTime) {
+        const checkinTime = record.attendanceTime || record._creationTime;
+
+        if (record.isOT === true) {
+          const checkoutTime = currentCronTime;
+          const totalDurationMins = Math.floor((checkoutTime - checkinTime) / (1000 * 60));
+
+          let otDurationMinutes = 0;
+          if (totalDurationMins > 8 * 60) {
+            otDurationMinutes = totalDurationMins - 8 * 60;
+          }
+          const hasOT = otDurationMinutes > 0;
+
+          await ctx.db.patch(record._id, {
+            checkoutTime,
+            hasOT,
+            otDurationMinutes,
+            isOT: true,
+            otMinutes: otDurationMinutes,
+            autoCheckout: true,
+          });
+        } else {
+          const sixPM_IST_epoch = new Date(`${year}-${month}-${day}T18:00:00+05:30`).getTime();
+          const checkoutTime = Math.min(checkinTime + 8 * 60 * 60 * 1000, sixPM_IST_epoch);
+          await ctx.db.patch(record._id, {
+            checkoutTime,
+            hasOT: false,
+            otDurationMinutes: 0,
+            isOT: false,
+            otMinutes: 0,
+            autoCheckout: true,
+          });
+        }
+      }
+    }
+  },
+});
+
+export const autoFillAbsentReason = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // Skip Sundays
+    const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    if (nowIST.getDay() === 0) return;
+
+    const todayLocal = new Date().toLocaleDateString("en-US", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" });
+    const [month, day, year] = todayLocal.split("/");
+    const dateString = `${year}-${month}-${day}`;
+
+    const absentRecords = await ctx.db
+      .query("attendance")
+      .withIndex("by_dateString", (q) => q.eq("dateString", dateString))
+      .filter((q) => q.eq(q.field("status"), "absent"))
+      .collect();
+
+    for (const record of absentRecords) {
+      if (!record.reason) {
         await ctx.db.patch(record._id, {
-          checkoutTime,
-          hasOT,
-          otDurationMinutes,
+          reason: "No Reason",
         });
       }
     }
@@ -373,10 +482,10 @@ export const autoCheckoutMissing = internalMutation({
 });
 
 export const submitAbsentReason = mutation({
-  args: { 
-    employeeId: v.id("employee"), 
+  args: {
+    employeeId: v.id("employee"),
     reason: v.string(),
-    dateString: v.string() 
+    dateString: v.string(),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -387,9 +496,9 @@ export const submitAbsentReason = mutation({
       .first();
 
     if (existing) {
-      await ctx.db.patch(existing._id, { 
+      await ctx.db.patch(existing._id, {
         reason: args.reason,
-        status: "absent" // Ensure status is absent if reason provided
+        status: "absent", // Ensure status is absent if reason provided
       });
     } else {
       await ctx.db.insert("attendance", {

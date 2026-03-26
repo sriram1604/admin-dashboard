@@ -28,6 +28,9 @@ export default defineSchema({
     checkoutTime: v.optional(v.number()),
     hasOT: v.optional(v.boolean()),
     otDurationMinutes: v.optional(v.number()),
+    isOT: v.optional(v.boolean()),
+    otMinutes: v.optional(v.number()),
+    autoCheckout: v.optional(v.boolean()),
     status: v.string(), // "present", "absent", "pending"
     dateString: v.string(), // ISO string YYYY-MM-DD for identifying the day
     reason: v.optional(v.string()), // For absent users

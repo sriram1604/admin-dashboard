@@ -5,6 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Users, UserCheck, UserX, Clock, Calendar, Download, ExternalLink, MessageSquareQuote } from "lucide-react";
 import { motion } from "framer-motion";
+import OTManagement from "@/components/OTManagement";
 
 export default function Home() {
   const stats = useQuery(api.admin.getDashboardStats);
@@ -75,6 +76,8 @@ export default function Home() {
             </motion.div>
           ))}
         </div>
+
+        <OTManagement />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 md:gap-10">
             {/* APK Download Section */}

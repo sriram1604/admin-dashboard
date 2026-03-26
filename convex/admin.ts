@@ -11,115 +11,119 @@ export const listEmployees = query({
 });
 
 export const getEmployees = query({
-    args: {},
-    handler: async (ctx) => {
-        return await ctx.db.query("employee").collect();
-    }
-})
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("employee").collect();
+  },
+});
 
 export const getEmployeeById = query({
-    args: { id: v.id("employee") },
-    handler: async (ctx, args) => {
-        return await ctx.db.get(args.id);
-    }
-})
+  args: { id: v.id("employee") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
 
 export const createEmployee = mutation({
-    args: {
-        name: v.string(),
-        email: v.optional(v.string()),
-        phonenumber: v.string(),
-        employeeId: v.string(),
-        role: v.string(),
-    },
-    handler: async (ctx, args) => {
-        const parts = args.name.split(" ");
-        const firstname = parts[0];
-        const lastname = parts.slice(1).join(" ") || " ";
-        
-        const existing = await ctx.db
-            .query("employee")
-            .withIndex("by_phonenumber", (q) => q.eq("phonenumber", args.phonenumber))
-            .first();
-        
-        if (existing) {
-            throw new Error("Employee with this phone number already exists");
-        }
+  args: {
+    name: v.string(),
+    email: v.optional(v.string()),
+    phonenumber: v.string(),
+    employeeId: v.string(),
+    role: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const parts = args.name.split(" ");
+    const firstname = parts[0];
+    const lastname = parts.slice(1).join(" ") || " ";
 
-        return await ctx.db.insert("employee", {
-            firstname,
-            lastname,
-            phonenumber: args.phonenumber,
-            email: args.email,
-            employeeId: args.employeeId,
-            role: args.role,
-            status: "active",
-            joiningDate: Date.now(),
-            aadharCardnumber: "NOT_PROVIDED", // Default for now
-            password: "pks" + args.phonenumber.slice(-4), // Simple default password
-        });
+    const existing = await ctx.db
+      .query("employee")
+      .withIndex("by_phonenumber", (q) => q.eq("phonenumber", args.phonenumber))
+      .first();
+
+    if (existing) {
+      throw new Error("Employee with this phone number already exists");
     }
-})
+
+    return await ctx.db.insert("employee", {
+      firstname,
+      lastname,
+      phonenumber: args.phonenumber,
+      email: args.email,
+      employeeId: args.employeeId,
+      role: args.role,
+      status: "active",
+      joiningDate: Date.now(),
+      aadharCardnumber: "NOT_PROVIDED", // Default for now
+      password: "pks" + args.phonenumber.slice(-4), // Simple default password
+    });
+  },
+});
 
 export const updateEmployee = mutation({
-    args: {
-        id: v.id("employee"),
-        firstname: v.optional(v.string()),
-        lastname: v.optional(v.string()),
-        email: v.optional(v.string()),
-        phonenumber: v.optional(v.string()),
-        employeeId: v.optional(v.string()),
-        role: v.optional(v.string()),
-        status: v.optional(v.string()),
-        joiningDate: v.optional(v.number()),
-        aadharCardnumber: v.optional(v.string()),
-    },
-    handler: async (ctx, args) => {
-        const { id, ...data } = args;
-        await ctx.db.patch(id, data);
-    }
-})
+  args: {
+    id: v.id("employee"),
+    firstname: v.optional(v.string()),
+    lastname: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phonenumber: v.optional(v.string()),
+    employeeId: v.optional(v.string()),
+    role: v.optional(v.string()),
+    status: v.optional(v.string()),
+    joiningDate: v.optional(v.number()),
+    aadharCardnumber: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { id, ...data } = args;
+    await ctx.db.patch(id, data);
+  },
+});
 
 export const getEmployeeDetails = query({
-    args: { employeeId: v.id("employee") },
-    handler: async (ctx, args) => {
-        console.log("Getting details for employee:", args.employeeId);
-        const employee = await ctx.db.get(args.employeeId);
-        if (!employee) {
-            console.log("Employee not found");
-            return null;
-        }
-
-        const records = await ctx.db
-            .query("attendance")
-            .withIndex("by_employeeId", (q) => q.eq("employeeId", args.employeeId))
-            .collect();
-
-        const totalDays = records.length;
-        const presentDays = records.filter(r => r.status === "present").length;
-        const absentDays = records.filter(r => r.status === "absent").length;
-
-        const lastCheckIn = records
-            .filter(r => r.attendanceTime)
-            .sort((a, b) => (b.attendanceTime || 0) - (a.attendanceTime || 0))[0]?.attendanceTime;
-        
-        const lastCheckOut = records
-            .filter(r => r.checkoutTime)
-            .sort((a, b) => (b.checkoutTime || 0) - (a.checkoutTime || 0))[0]?.checkoutTime;
-
-        return {
-            ...employee,
-            attendanceSummary: {
-                totalDays,
-                presentDays,
-                absentDays,
-                presentPercentage: totalDays > 0 ? (presentDays / totalDays) * 100 : 0
-            },
-            lastCheckIn,
-            lastCheckOut
-        };
+  args: { employeeId: v.id("employee") },
+  handler: async (ctx, args) => {
+    console.log("Getting details for employee:", args.employeeId);
+    const employee = await ctx.db.get(args.employeeId);
+    if (!employee) {
+      console.log("Employee not found");
+      return null;
     }
-})
+
+    const records = await ctx.db
+      .query("attendance")
+      .withIndex("by_employeeId", (q) => q.eq("employeeId", args.employeeId))
+      .collect();
+
+    const totalDays = records.length;
+    const presentDays = records.filter((r) => r.status === "present").length;
+    const absentDays = records.filter((r) => r.status === "absent").length;
+
+    const lastCheckIn = records
+      .filter((r) => r.attendanceTime)
+      .sort(
+        (a, b) => (b.attendanceTime || 0) - (a.attendanceTime || 0),
+      )[0]?.attendanceTime;
+
+    const lastCheckOut = records
+      .filter((r) => r.checkoutTime)
+      .sort(
+        (a, b) => (b.checkoutTime || 0) - (a.checkoutTime || 0),
+      )[0]?.checkoutTime;
+
+    return {
+      ...employee,
+      attendanceSummary: {
+        totalDays,
+        presentDays,
+        absentDays,
+        presentPercentage: totalDays > 0 ? (presentDays / totalDays) * 100 : 0,
+      },
+      lastCheckIn,
+      lastCheckOut,
+    };
+  },
+});
 
 export const listAttendance = query({
   args: {
@@ -141,20 +145,25 @@ export const listAttendance = query({
         .withIndex("by_employeeId", (q) => q.eq("employeeId", args.employeeId!))
         .paginate(args.paginationOpts);
     } else {
-      results = await ctx.db.query("attendance").order("desc").paginate(args.paginationOpts);
+      results = await ctx.db
+        .query("attendance")
+        .order("desc")
+        .paginate(args.paginationOpts);
     }
-    
+
     // Join with employee data
     const pageWithEmployees = await Promise.all(
       results.page.map(async (record) => {
         const employee = await ctx.db.get(record.employeeId);
         return {
           ...record,
-          employeeName: employee ? `${employee.firstname} ${employee.lastname}` : "Unknown",
+          employeeName: employee
+            ? `${employee.firstname} ${employee.lastname}`
+            : "Unknown",
           employeePhone: employee?.phonenumber,
           photoUrl: employee?.photoUrl,
         };
-      })
+      }),
     );
 
     return { ...results, page: pageWithEmployees };
@@ -162,33 +171,39 @@ export const listAttendance = query({
 });
 
 export const getDashboardStats = query({
-    args: {},
-    handler: async (ctx) => {
-        const totalEmployees = (await ctx.db.query("employee").collect()).length;
-        
-        // Safe way to get YYYY-MM-DD in IST
-        const now = new Date();
-        const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-        const dateString = istTime.toISOString().split('T')[0];
+  args: {},
+  handler: async (ctx) => {
+    const totalEmployees = (await ctx.db.query("employee").collect()).length;
 
-        const todayAttendance = await ctx.db
-            .query("attendance")
-            .withIndex("by_dateString", (q) => q.eq("dateString", dateString))
-            .collect();
+    // Safe way to get YYYY-MM-DD in IST
+    const now = new Date();
+    const istTime = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+    const dateString = istTime.toISOString().split("T")[0];
 
-        const presentToday = todayAttendance.filter(r => r.status === "present").length;
-        const absentToday = todayAttendance.filter(r => r.status === "absent").length;
-        const pendingToday = todayAttendance.filter(r => r.status === "pending").length;
+    const todayAttendance = await ctx.db
+      .query("attendance")
+      .withIndex("by_dateString", (q) => q.eq("dateString", dateString))
+      .collect();
 
-        return {
-            totalEmployees,
-            presentToday,
-            absentToday,
-            pendingToday,
-            dateString
-        };
-    }
-})
+    const presentToday = todayAttendance.filter(
+      (r) => r.status === "present",
+    ).length;
+    const absentToday = todayAttendance.filter(
+      (r) => r.status === "absent",
+    ).length;
+    const pendingToday = todayAttendance.filter(
+      (r) => r.status === "pending",
+    ).length;
+
+    return {
+      totalEmployees,
+      presentToday,
+      absentToday,
+      pendingToday,
+      dateString,
+    };
+  },
+});
 
 export const insertNotification = mutation({
   args: {
@@ -208,40 +223,45 @@ export const insertNotification = mutation({
 });
 
 export const getNotifications = query({
-    args: { employeeId: v.id("employee") },
-    handler: async (ctx, args) => {
-        return await ctx.db
-            .query("notifications")
-            .withIndex("by_employeeId", (q) => q.eq("employeeId", args.employeeId))
-            .order("desc")
-            .collect();
-    }
-})
+  args: { employeeId: v.id("employee") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("notifications")
+      .withIndex("by_employeeId", (q) => q.eq("employeeId", args.employeeId))
+      .order("desc")
+      .collect();
+  },
+});
 
 export const getAbsentReasons = query({
-    args: {},
-    handler: async (ctx) => {
-        const records = await ctx.db
-            .query("attendance")
-            .filter((q) => q.and(
-                q.eq(q.field("status"), "absent"),
-                q.neq(q.field("reason"), undefined)
-            ))
-            .order("desc")
-            .take(10); // Get latest 10 reasons
+  args: {},
+  handler: async (ctx) => {
+    const records = await ctx.db
+      .query("attendance")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("status"), "absent"),
+          q.neq(q.field("reason"), undefined),
+        ),
+      )
+      .order("desc")
+      .take(10); // Get latest 10 reasons
 
-        return await Promise.all(
-            records.map(async (record) => {
-                const employee = await ctx.db.get(record.employeeId);
-                return {
-                    ...record,
-                    employeeName: employee ? `${employee.firstname} ${employee.lastname}` : "Unknown Employee",
-                    employeePhoto: employee?.photoUrl,
-                };
-            })
-        );
-    }
-})
+    return await Promise.all(
+      records.map(async (record) => {
+        const employee = await ctx.db.get(record.employeeId);
+        return {
+          ...record,
+          employeeName: employee
+            ? `${employee.firstname} ${employee.lastname}`
+            : "Unknown Employee",
+          employeePhoto: employee?.photoUrl,
+        };
+      }),
+    );
+  },
+});
+
 export const getAttendanceExport = query({
   args: {
     startDate: v.optional(v.string()), // YYYY-MM-DD
@@ -282,5 +302,73 @@ export const getAttendanceExport = query({
         };
       })
     );
+  },
+});
+
+export const getTodayOTStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const todayLocal = new Date().toLocaleDateString("en-US", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const [month, day, year] = todayLocal.split("/");
+    const dateString = `${year}-${month}-${day}`;
+
+    const records = await ctx.db
+      .query("attendance")
+      .withIndex("by_dateString", (q) => q.eq("dateString", dateString))
+      .filter((q) => q.eq(q.field("status"), "present"))
+      .collect();
+
+    const withEmployees = await Promise.all(
+      records.map(async (record) => {
+        const employee = await ctx.db.get(record.employeeId);
+        return {
+          ...record,
+          employeeName: employee ? `${employee.firstname} ${employee.lastname}` : "Unknown",
+          employeeIdTag: employee?.employeeId || "N/A",
+        };
+      })
+    );
+
+    return {
+      ot: withEmployees.filter((r) => r.isOT === true),
+      nonOt: withEmployees.filter((r) => r.isOT !== true),
+    };
+  },
+});
+
+export const updateOTStatusToFalse = mutation({
+  args: { attendanceId: v.id("attendance") },
+  handler: async (ctx, args) => {
+    const record = await ctx.db.get(args.attendanceId);
+    if (!record || record.status !== "present") {
+      throw new Error("Attendance record not found or not present today.");
+    }
+    if (record.isOT !== true) {
+      throw new Error("Already non-OT.");
+    }
+
+    const checkinTime = record.attendanceTime || record._creationTime;
+
+    const todayLocalStr = new Date().toLocaleDateString("en-US", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" });
+    const [m, d, y] = todayLocalStr.split("/");
+    const sixPM_IST_epoch = new Date(`${y}-${m}-${d}T18:00:00+05:30`).getTime();
+    
+    const checkoutTime = Math.min(checkinTime + 8 * 60 * 60 * 1000, sixPM_IST_epoch);
+
+    await ctx.db.patch(args.attendanceId, {
+      isOT: false,
+      hasOT: false,
+      otMinutes: 0,
+      otDurationMinutes: 0,
+      checkoutTime,
+      autoCheckout: true,
+    });
+
+    return { success: true };
   },
 });

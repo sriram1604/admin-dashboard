@@ -5,24 +5,34 @@ export const generateSignature = action({
   args: {
     paramsToSign: v.any(),
   },
-  handler: async (ctx: ActionCtx, args: { paramsToSign: Record<string, any> }) => {
+  handler: async (
+    ctx: ActionCtx,
+    args: { paramsToSign: Record<string, any> },
+  ) => {
     try {
       const API_SECRET = process.env.CLOUDINARY_API_SECRET;
 
       if (!API_SECRET) {
-        console.error("CLOUDINARY_API_SECRET is missing from Convex environment variables");
-        throw new Error("Cloudinary API Secret not found in environment variables");
+        console.error(
+          "CLOUDINARY_API_SECRET is missing from Convex environment variables",
+        );
+        throw new Error(
+          "Cloudinary API Secret not found in environment variables",
+        );
       }
 
       console.log("Generating signature for params:", args.paramsToSign);
 
       // Sort parameters alphabetically
       const sortedKeys = Object.keys(args.paramsToSign).sort();
-      const stringToSign = sortedKeys
-        .map((key) => `${key}=${args.paramsToSign[key]}`)
-        .join("&") + API_SECRET;
+      const stringToSign =
+        sortedKeys.map((key) => `${key}=${args.paramsToSign[key]}`).join("&") +
+        API_SECRET;
 
-      console.log("String to sign (without secret shown):", stringToSign.replace(API_SECRET, "****"));
+      console.log(
+        "String to sign (without secret shown):",
+        stringToSign.replace(API_SECRET, "****"),
+      );
 
       // Use Web Crypto API (SHA-1)
       const msgBuffer = new TextEncoder().encode(stringToSign);
@@ -36,7 +46,9 @@ export const generateSignature = action({
       return signature;
     } catch (error: any) {
       console.error("Error in generateSignature:", error);
-      throw new Error(`Failed to generate Cloudinary signature: ${error.message}`);
+      throw new Error(
+        `Failed to generate Cloudinary signature: ${error.message}`,
+      );
     }
   },
 });

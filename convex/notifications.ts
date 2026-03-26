@@ -1,5 +1,12 @@
 import { v } from "convex/values";
-import { action, internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
 import { api, internal } from "./_generated/api";
 
 export const saveToken = mutation({
@@ -72,12 +79,20 @@ export const getAllEmployeeTokens = internalQuery({
   args: {},
   handler: async (ctx) => {
     const employees = await ctx.db.query("employee").collect();
-    return employees.map(e => ({ employeeId: e._id, pushToken: e.pushToken }));
+    return employees.map((e) => ({
+      employeeId: e._id,
+      pushToken: e.pushToken,
+    }));
   },
 });
 
 export const sendPushNotification = internalAction({
-  args: { pushToken: v.string(), title: v.string(), body: v.string(), data: v.optional(v.any()) },
+  args: {
+    pushToken: v.string(),
+    title: v.string(),
+    body: v.string(),
+    data: v.optional(v.any()),
+  },
   handler: async (ctx, args) => {
     try {
       await fetch("https://exp.host/--/api/v2/push/send", {
@@ -107,11 +122,13 @@ export const sendPushNotification = internalAction({
 export const sendMorningReminderAll = internalAction({
   args: {},
   handler: async (ctx) => {
-    const employees = await ctx.runQuery(internal.notifications.getAllEmployeeTokens);
+    const employees = await ctx.runQuery(
+      internal.notifications.getAllEmployeeTokens,
+    );
     for (const emp of employees) {
-      const title = "Attendance Started!";
-      const body = "Please put your check-in from 9-10 AM.";
-      
+      const title = "🌅 Rise & Shine!";
+      const body = "Attendance will open at 6:00 AM ⏰. Get ready to conquer the day! 🚀";
+
       await ctx.runMutation(internal.notifications.insertNotification, {
         employeeId: emp.employeeId,
         title,
@@ -143,23 +160,31 @@ export const sendAfternoonCheckoutReminder = internalAction({
     const dateString = `${year}-${month}-${day}`;
 
     // Get tokens and checkins
-    const employees = await ctx.runQuery(internal.notifications.getAllEmployeeTokens);
-    
+    const employees = await ctx.runQuery(
+      internal.notifications.getAllEmployeeTokens,
+    );
+
     for (const emp of employees) {
-      const attendance = await ctx.runQuery(api.attendance.getTodayAttendance, { employeeId: emp.employeeId });
-      
+      const attendance = await ctx.runQuery(api.attendance.getTodayAttendance, {
+        employeeId: emp.employeeId,
+      });
+
       const anyAttendance = attendance as any;
-      if (attendance && attendance.status === "present" && anyAttendance.attendanceTime) {
+      if (
+        attendance &&
+        attendance.status === "present" &&
+        anyAttendance.attendanceTime
+      ) {
         const checkinDate = new Date(anyAttendance.attendanceTime);
         checkinDate.setHours(checkinDate.getHours() + 8);
-        const checkoutTimeStr = checkinDate.toLocaleTimeString("en-US", { 
-          timeZone: "Asia/Kolkata", 
-          hour: "2-digit", 
-          minute: "2-digit" 
+        const checkoutTimeStr = checkinDate.toLocaleTimeString("en-US", {
+          timeZone: "Asia/Kolkata",
+          hour: "2-digit",
+          minute: "2-digit",
         });
 
-        const title = "Checkout Schedule";
-        const body = `Your 8-hour shift ends at ${checkoutTimeStr}. Please plan your checkout accordingly.`;
+        const title = "⏳ Shift Update!";
+        const body = `Your 8-hour shift ends at ${checkoutTimeStr} 🎯. Plan your checkout & wrap up strong! 💪`;
 
         await ctx.runMutation(internal.notifications.insertNotification, {
           employeeId: emp.employeeId,
@@ -186,9 +211,10 @@ export const sendCheckoutReminder = internalAction({
     const token = await ctx.runQuery(internal.notifications.getEmployeeToken, {
       employeeId: args.employeeId,
     });
-    
-    const title = "⏰ Shift Complete!";
-    const body = "Your 8 hours are up! Please checkout if you are ready to leave.";
+
+    const title = "🎉 Shift Complete!";
+    const body =
+      "Your 8 hours are up! 🥳 Time to check out and enjoy the rest of your day! 🛋️✨";
 
     await ctx.runMutation(internal.notifications.insertNotification, {
       employeeId: args.employeeId,
@@ -201,20 +227,19 @@ export const sendCheckoutReminder = internalAction({
         pushToken: token,
         title,
         body,
-        data: { type: "alarm" }
+        data: { type: "alarm" },
       });
     }
   },
 });
 
-// Cron mutation: delete old seen messages
+// Cron mutation: delete old messages
 export const deleteOldSeenMessages = internalMutation({
   args: {},
   handler: async (ctx) => {
     const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const notifications = await ctx.db
       .query("notifications")
-      .filter((q) => q.eq(q.field("read"), true))
       .collect();
 
     for (const notif of notifications) {
@@ -228,19 +253,28 @@ export const deleteOldSeenMessages = internalMutation({
 export const notifyAbsentReasonRequired = internalAction({
   args: {},
   handler: async (ctx) => {
-    const employees = await ctx.runQuery(internal.notifications.getAllEmployeeTokens);
-    
+    const employees = await ctx.runQuery(
+      internal.notifications.getAllEmployeeTokens,
+    );
+
     for (const emp of employees) {
-      const attendance = await ctx.runQuery(api.attendance.getTodayAttendance, { employeeId: emp.employeeId });
-      
+      const attendance = await ctx.runQuery(api.attendance.getTodayAttendance, {
+        employeeId: emp.employeeId,
+      });
+
       // If no attendance or status is 'absent' or 'pending' (and it's now 10 AM, so should be marked absent)
-      if (!attendance || attendance.status === "pending" || attendance.status === "absent") {
+      if (
+        !attendance ||
+        attendance.status === "pending" ||
+        attendance.status === "absent"
+      ) {
         // Double check if reason is already provided
         const record = attendance as any;
         if (record && record.reason) continue;
 
-        const title = "Reason Required!";
-        const body = "It's past 10 AM and you haven't checked in. Please provide a reason for your absence.";
+        const title = "🤔 We missed you today!";
+        const body =
+          "It's past 10:00 AM and we didn't see your check-in 🏢. Please submit a reason for your absence. 📝";
 
         await ctx.runMutation(internal.notifications.insertNotification, {
           employeeId: emp.employeeId,
@@ -253,7 +287,7 @@ export const notifyAbsentReasonRequired = internalAction({
             pushToken: emp.pushToken,
             title,
             body,
-            data: { type: "absent_reason_required" }
+            data: { type: "absent_reason_required" },
           });
         }
       }
@@ -270,7 +304,10 @@ export const sendBulkNotification = action({
   },
   handler: async (ctx, args) => {
     for (const employeeId of args.employeeIds) {
-      const token = await ctx.runQuery(internal.notifications.getEmployeeToken, { employeeId });
+      const token = await ctx.runQuery(
+        internal.notifications.getEmployeeToken,
+        { employeeId },
+      );
 
       await ctx.runMutation(internal.notifications.insertNotification, {
         employeeId,
@@ -299,8 +336,9 @@ export const sendNotification = action({
   },
   handler: async (ctx, args) => {
     // 1. Get employee push token
-    // We use internal query here for consistency
-    const token = await ctx.runQuery(internal.notifications.getEmployeeToken, { employeeId: args.employeeId });
+    const token = await ctx.runQuery(internal.notifications.getEmployeeToken, {
+      employeeId: args.employeeId,
+    });
 
     // 2. Store in database
     await ctx.runMutation(internal.notifications.insertNotification, {
@@ -311,11 +349,11 @@ export const sendNotification = action({
 
     // 3. Send push notification if token exists
     if (token) {
-        await ctx.runAction(internal.notifications.sendPushNotification, {
-            pushToken: token,
-            title: args.title,
-            body: args.body,
-        });
+      await ctx.runAction(internal.notifications.sendPushNotification, {
+        pushToken: token,
+        title: args.title,
+        body: args.body,
+      });
     }
 
     return { success: true };

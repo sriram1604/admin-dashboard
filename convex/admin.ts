@@ -26,17 +26,18 @@ export const getEmployeeById = query({
 
 export const createEmployee = mutation({
   args: {
-    name: v.string(),
+    firstname: v.string(),
+    lastname: v.string(),
     email: v.optional(v.string()),
     phonenumber: v.string(),
-    employeeId: v.string(),
-    role: v.string(),
+    employeeId: v.optional(v.string()),
+    role: v.optional(v.string()),
+    status: v.optional(v.string()),
+    joiningDate: v.optional(v.number()),
+    aadharCardnumber: v.string(),
+    password: v.string(),
   },
   handler: async (ctx, args) => {
-    const parts = args.name.split(" ");
-    const firstname = parts[0];
-    const lastname = parts.slice(1).join(" ") || " ";
-
     const existing = await ctx.db
       .query("employee")
       .withIndex("by_phonenumber", (q) => q.eq("phonenumber", args.phonenumber))
@@ -47,17 +48,24 @@ export const createEmployee = mutation({
     }
 
     return await ctx.db.insert("employee", {
-      firstname,
-      lastname,
+      firstname: args.firstname,
+      lastname: args.lastname,
       phonenumber: args.phonenumber,
       email: args.email,
       employeeId: args.employeeId,
-      role: args.role,
-      status: "active",
-      joiningDate: Date.now(),
-      aadharCardnumber: "NOT_PROVIDED", // Default for now
-      password: "pks" + args.phonenumber.slice(-4), // Simple default password
+      role: args.role || "Employee",
+      status: args.status || "active",
+      joiningDate: args.joiningDate ?? Date.now(),
+      aadharCardnumber: args.aadharCardnumber,
+      password: args.password,
     });
+  },
+});
+
+export const deleteEmployee = mutation({
+  args: { id: v.id("employee") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.id);
   },
 });
 

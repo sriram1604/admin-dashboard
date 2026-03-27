@@ -24,7 +24,8 @@ import {
   AlertCircle,
   Loader2,
   Edit3,
-  Save
+  Save,
+  Trash2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
@@ -212,9 +213,11 @@ export default function EmployeesPage() {
 function EmployeeDetailModal({ id, onClose }: { id: string, onClose: () => void }) {
     const details = useQuery(api.admin.getEmployeeDetails, { employeeId: id as any });
     const updateEmployee = useMutation(api.admin.updateEmployee);
+    const deleteEmployee = useMutation(api.admin.deleteEmployee);
     
     const [isEditing, setIsEditing] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [editForm, setEditForm] = useState<any>(null);
 
     // Initialize form when details are loaded or edit mode is entered
@@ -248,6 +251,20 @@ function EmployeeDetailModal({ id, onClose }: { id: string, onClose: () => void 
             toast.error(error.message || "Failed to update employee");
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (confirm("Are you sure you want to delete this employee? This action cannot be undone.")) {
+            setIsDeleting(true);
+            try {
+                await deleteEmployee({ id: id as any });
+                toast.success("Employee deleted successfully!");
+                onClose();
+            } catch (error: any) {
+                toast.error(error.message || "Failed to delete employee");
+                setIsDeleting(false);
+            }
         }
     };
 
@@ -287,6 +304,13 @@ function EmployeeDetailModal({ id, onClose }: { id: string, onClose: () => void 
                             {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                         </button>
                     )}
+                    <button 
+                        onClick={handleDelete}
+                        disabled={isDeleting}
+                        className="p-3 rounded-xl bg-white/5 hover:bg-rose-500/20 text-white/40 hover:text-rose-400 transition-all border border-white/5"
+                    >
+                        {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+                    </button>
                     <button 
                         onClick={onClose}
                         className="p-3 rounded-xl bg-white/5 hover:bg-rose-500/10 text-white/40 hover:text-rose-400 z-20 transition-all border border-white/5"
@@ -489,18 +513,23 @@ function EmployeeDetailModal({ id, onClose }: { id: string, onClose: () => void 
 
 function InviteEmployeeModal({ onClose }: { onClose: () => void }) {
     const [formData, setFormData] = useState({
-        name: "",
+        firstname: "",
+        lastname: "",
         email: "",
         phone: "",
+        aadharCardnumber: "",
+        password: "",
         employeeId: "",
-        role: "Employee"
+        role: "Employee",
+        status: "active",
+        joiningDate: format(new Date(), "yyyy-MM-dd")
     });
     const [submitting, setSubmitting] = useState(false);
     const createEmployee = useMutation(api.admin.createEmployee);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.name || !formData.phone || !formData.employeeId) {
+        if (!formData.firstname || !formData.lastname || !formData.phone || !formData.employeeId || !formData.password || !formData.aadharCardnumber) {
             toast.error("Please fill in all mandatory fields");
             return;
         }
@@ -508,16 +537,21 @@ function InviteEmployeeModal({ onClose }: { onClose: () => void }) {
         setSubmitting(true);
         try {
             await createEmployee({
-                name: formData.name,
+                firstname: formData.firstname,
+                lastname: formData.lastname,
                 email: formData.email,
                 phonenumber: formData.phone,
                 employeeId: formData.employeeId,
-                role: formData.role
+                role: formData.role,
+                status: formData.status,
+                joiningDate: new Date(formData.joiningDate).getTime(),
+                aadharCardnumber: formData.aadharCardnumber,
+                password: formData.password,
             });
-            toast.success("Employee invited successfully!");
+            toast.success("Employee created successfully!");
             onClose();
         } catch (error: any) {
-            toast.error(error.message || "Failed to invite employee");
+            toast.error(error.message || "Failed to create employee");
         } finally {
             setSubmitting(false);
         }
@@ -542,7 +576,7 @@ function InviteEmployeeModal({ onClose }: { onClose: () => void }) {
                             <UserPlus className="w-8 h-8 text-emerald-400" />
                         </div>
                         <div>
-                            <h3 className="text-3xl font-black text-white tracking-tight leading-none mb-2 uppercase">Invite Personnel</h3>
+                            <h3 className="text-3xl font-black text-white tracking-tight leading-none mb-2 uppercase">Create Personnel</h3>
                             <p className="text-white/30 text-xs font-bold uppercase tracking-widest">Create system access for new staff</p>
                         </div>
                     </div>
@@ -554,13 +588,24 @@ function InviteEmployeeModal({ onClose }: { onClose: () => void }) {
                 <form onSubmit={handleSubmit} className="space-y-8">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                         <div className="space-y-3">
-                            <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">Full Legal Name</label>
+                            <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">First Name *</label>
                             <input 
                                 type="text" 
                                 required
-                                value={formData.name}
-                                onChange={e => setFormData({...formData, name: e.target.value})}
-                                placeholder="e.g. Rahul Sharma"
+                                value={formData.firstname}
+                                onChange={e => setFormData({...formData, firstname: e.target.value})}
+                                placeholder="e.g. Rahul"
+                                className="w-full bg-white/5 border border-white/5 hover:border-white/20 rounded-2xl px-6 py-4 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all font-bold tracking-tight"
+                            />
+                        </div>
+                        <div className="space-y-3">
+                            <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">Last Name *</label>
+                            <input 
+                                type="text" 
+                                required
+                                value={formData.lastname}
+                                onChange={e => setFormData({...formData, lastname: e.target.value})}
+                                placeholder="e.g. Sharma"
                                 className="w-full bg-white/5 border border-white/5 hover:border-white/20 rounded-2xl px-6 py-4 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all font-bold tracking-tight"
                             />
                         </div>
@@ -575,7 +620,7 @@ function InviteEmployeeModal({ onClose }: { onClose: () => void }) {
                             />
                         </div>
                         <div className="space-y-3">
-                            <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">Phone Number</label>
+                            <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">Phone Number *</label>
                             <input 
                                 type="tel" 
                                 required
@@ -586,7 +631,29 @@ function InviteEmployeeModal({ onClose }: { onClose: () => void }) {
                             />
                         </div>
                         <div className="space-y-3">
-                            <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">Employee ID</label>
+                            <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">Aadhar Number *</label>
+                            <input 
+                                type="text" 
+                                required
+                                value={formData.aadharCardnumber}
+                                onChange={e => setFormData({...formData, aadharCardnumber: e.target.value})}
+                                placeholder="XXXX XXXX XXXX"
+                                className="w-full bg-white/5 border border-white/5 hover:border-white/20 rounded-2xl px-6 py-4 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all font-bold tracking-tight"
+                            />
+                        </div>
+                        <div className="space-y-3">
+                            <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">Password *</label>
+                            <input 
+                                type="text" 
+                                required
+                                value={formData.password}
+                                onChange={e => setFormData({...formData, password: e.target.value})}
+                                placeholder="Temporary password"
+                                className="w-full bg-white/5 border border-white/5 hover:border-white/20 rounded-2xl px-6 py-4 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all font-bold tracking-tight"
+                            />
+                        </div>
+                        <div className="space-y-3">
+                            <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">Employee ID *</label>
                             <input 
                                 type="text" 
                                 required
@@ -596,7 +663,17 @@ function InviteEmployeeModal({ onClose }: { onClose: () => void }) {
                                 className="w-full bg-white/5 border border-white/5 hover:border-white/20 rounded-2xl px-6 py-4 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all font-bold tracking-tight"
                             />
                         </div>
-                        <div className="sm:col-span-2 space-y-3">
+                        <div className="space-y-3">
+                            <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">Joining Date</label>
+                            <input 
+                                type="date" 
+                                required
+                                value={formData.joiningDate}
+                                onChange={e => setFormData({...formData, joiningDate: e.target.value})}
+                                className="w-full bg-white/5 border border-white/5 hover:border-white/20 rounded-2xl px-6 py-4 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all font-bold tracking-tight"
+                            />
+                        </div>
+                        <div className="space-y-3">
                             <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">Organization Role</label>
                             <select 
                                 value={formData.role}
@@ -607,6 +684,17 @@ function InviteEmployeeModal({ onClose }: { onClose: () => void }) {
                                 <option value="Manager" className="bg-[#18181b]">Department Manager</option>
                                 <option value="Admin" className="bg-[#18181b]">System Administrator</option>
                                 <option value="Contractor" className="bg-[#18181b]">Contract Worker</option>
+                            </select>
+                        </div>
+                        <div className="space-y-3">
+                            <label className="text-white/20 text-[10px] font-black uppercase tracking-[0.2em] px-2 italic">Status</label>
+                            <select 
+                                value={formData.status}
+                                onChange={e => setFormData({...formData, status: e.target.value})}
+                                className="w-full bg-white/5 border border-white/5 hover:border-white/20 rounded-2xl px-6 py-4 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all font-bold tracking-tight appearance-none"
+                            >
+                                <option value="active" className="bg-[#18181b]">Active</option>
+                                <option value="inactive" className="bg-[#18181b]">Inactive</option>
                             </select>
                         </div>
                     </div>

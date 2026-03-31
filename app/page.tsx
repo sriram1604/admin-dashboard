@@ -1,9 +1,10 @@
 "use client";
 
 import DashboardLayout from "@/components/DashboardLayout";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Users, UserCheck, UserX, Clock, Calendar, Download, ExternalLink, MessageSquareQuote } from "lucide-react";
+import { Users, UserCheck, UserX, Clock, Calendar, Download, ExternalLink, MessageSquareQuote, MessageSquare, Send } from "lucide-react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import OTManagement from "@/components/OTManagement";
 
@@ -115,15 +116,15 @@ export default function Home() {
             </div>
 
             {/* Absent Employee Reasons Section */}
-            <div className="glass-card rounded-[3rem] p-10 border border-white/5 flex flex-col h-full overflow-hidden">
-                <div className="flex items-center justify-between mb-10">
+            <div className="glass-card rounded-[3rem] p-10 border border-white/5 flex flex-col h-[450px] overflow-hidden">
+                <div className="flex items-center justify-between mb-10 shrink-0">
                   <div className="space-y-1">
                     <h3 className="text-2xl font-black text-white tracking-tight">Absent Reasons</h3>
                     <p className="text-white/20 text-[10px] font-black uppercase tracking-widest">Recent Submissions</p>
                   </div>
                   <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_10px_#f43f5e]" />
                 </div>
-                <div className="space-y-6 flex-1 overflow-y-auto custom-scrollbar pr-2">
+                <div className="space-y-6 flex-1 overflow-y-auto custom-scrollbar pr-2 min-h-0 pb-4">
                     <AbentReasonsList />
                 </div>
             </div>
@@ -154,29 +155,92 @@ function AbentReasonsList() {
     return (
         <div className="space-y-6">
             {reasons.map((record: any) => (
-                <div 
-                    key={record._id} 
-                    className="p-6 rounded-3xl bg-white/3 border border-white/5 flex items-start gap-4 hover:bg-white/6 transition-all cursor-default group"
-                >
-                    <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-110 transition-transform">
-                        {record.employeePhoto ? (
-                            <img src={record.employeePhoto} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center font-bold text-white/20 text-xs">
-                                {record.employeeName.charAt(0)}
-                            </div>
-                        )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                            <p className="text-white font-black text-sm uppercase tracking-tight group-hover:text-rose-400 transition-colors truncate">{record.employeeName}</p>
-                            <div className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]" />
+                <AbsentReasonCard key={record._id} record={record} />
+            ))}
+        </div>
+    );
+}
+
+function AbsentReasonCard({ record }: { record: any }) {
+    const [isMessaging, setIsMessaging] = useState(false);
+    const [message, setMessage] = useState("");
+    const [isSending, setIsSending] = useState(false);
+    const sendNotification = useMutation(api.admin.insertNotification);
+
+    const handleSend = async () => {
+        if (!message.trim()) return;
+        setIsSending(true);
+        try {
+            await sendNotification({
+                employeeId: record.employeeId,
+                title: "Message from Admin",
+                body: message.trim(),
+            });
+            setMessage("");
+            setIsMessaging(false);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsSending(false);
+        }
+    };
+
+    return (
+        <div className="p-6 rounded-3xl bg-white/3 border border-white/5 flex flex-col gap-4 hover:bg-white/6 transition-all cursor-default group">
+            <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-110 transition-transform">
+                    {record.employeePhoto ? (
+                        <img src={record.employeePhoto} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center font-bold text-white/20 text-xs">
+                            {record.employeeName.charAt(0)}
                         </div>
-                        <p className="text-white/30 text-[10px] font-black uppercase tracking-widest mt-0.5">{record.dateString}</p>
-                        <p className="text-white/50 text-sm mt-3 leading-relaxed font-medium italic line-clamp-3">"{record.reason}"</p>
+                    )}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                        <p className="text-white font-black text-sm uppercase tracking-tight group-hover:text-rose-400 transition-colors truncate">{record.employeeName}</p>
+                        <div className="flex items-center gap-2">
+                            <button 
+                                onClick={() => setIsMessaging(!isMessaging)}
+                                className="opacity-0 translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-white/40 hover:text-white p-1.5 rounded-full hover:bg-white/10 outline-none"
+                                title="Send Message"
+                            >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                            </button>
+                            <div className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e] ml-1" />
+                        </div>
+                    </div>
+                    <p className="text-white/30 text-[10px] font-black uppercase tracking-widest mt-0.5">{record.dateString}</p>
+                    <p className="text-white/50 text-sm mt-3 leading-relaxed font-medium italic line-clamp-3">"{record.reason}"</p>
+                </div>
+            </div>
+
+            {/* Messaging Input Area */}
+            {isMessaging && (
+                <div className="pl-14 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="flex items-center gap-2 bg-black/40 p-2 rounded-2xl border border-white/10 focus-within:border-white/30 transition-colors">
+                        <input 
+                            type="text" 
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            placeholder={`Message ${record.employeeName.split(' ')[0]}...`}
+                            className="bg-transparent border-none outline-none text-sm text-white px-2 flex-1 placeholder:text-white/20 min-w-0"
+                            autoFocus
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSend();
+                            }}
+                        />
+                        <button 
+                            onClick={handleSend}
+                            disabled={!message.trim() || isSending}
+                            className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+                        >
+                            <Send className="w-3.5 h-3.5" />
+                        </button>
                     </div>
                 </div>
-            ))}
+            )}
         </div>
     );
 }

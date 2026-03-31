@@ -187,7 +187,8 @@ export const listAttendance = query({
 export const getDashboardStats = query({
   args: {},
   handler: async (ctx) => {
-    const totalEmployees = (await ctx.db.query("employee").collect()).length;
+    const employees = await ctx.db.query("employee").collect();
+    const totalEmployees = employees.length;
 
     // Safe way to get YYYY-MM-DD in IST
     const now = new Date();
@@ -199,15 +200,33 @@ export const getDashboardStats = query({
       .withIndex("by_dateString", (q) => q.eq("dateString", dateString))
       .collect();
 
-    const presentToday = todayAttendance.filter(
-      (r) => r.status === "present",
-    ).length;
-    const absentToday = todayAttendance.filter(
-      (r) => r.status === "absent",
-    ).length;
-    const pendingToday = todayAttendance.filter(
-      (r) => r.status === "pending",
-    ).length;
+    const attendanceMap = new Map<string, string>();
+    for (const record of todayAttendance) {
+      const empId = record.employeeId.toString();
+      const existingStatus = attendanceMap.get(empId);
+      if (record.status === "present") {
+        attendanceMap.set(empId, "present");
+      } else if (record.status === "pending" && existingStatus !== "present") {
+        attendanceMap.set(empId, "pending");
+      } else if (!existingStatus) {
+        attendanceMap.set(empId, record.status);
+      }
+    }
+
+    let presentToday = 0;
+    let pendingToday = 0;
+
+    for (const emp of employees) {
+      const status = attendanceMap.get(emp._id.toString());
+      if (status === "present") {
+        presentToday++;
+      } else if (status === "pending") {
+        pendingToday++;
+      }
+    }
+
+    // Mathematically guarantee totals match total active employees
+    const absentToday = totalEmployees - presentToday - pendingToday;
 
     return {
       totalEmployees,

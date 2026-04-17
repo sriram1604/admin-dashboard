@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { 
   Search, 
@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
+import { toast } from "react-hot-toast";
 import ExportAttendanceButton from "@/components/ExportAttendanceButton";
 
 export default function AttendancePage() {
@@ -270,6 +271,73 @@ function AttendanceDetailModal({ record, onClose }: { record: any, onClose: () =
 
   const config = getStatusConfig(record.status);
 
+  const [showOverrideForm, setShowOverrideForm] = useState(false);
+  const [overrideType, setOverrideType] = useState<"to-present" | "to-absent" | null>(null);
+  
+  const [checkInTimeStr, setCheckInTimeStr] = useState("09:00");
+  const [checkOutTimeStr, setCheckOutTimeStr] = useState("");
+  const [comments, setComments] = useState("");
+  const [reason, setReason] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const adminMarkPresent = useMutation(api.admin.adminMarkPresent);
+  const adminMarkAbsent = useMutation(api.admin.adminMarkAbsent);
+
+  const handleMarkPresent = async () => {
+    if (!comments.trim()) {
+      toast.error("Comments are required");
+      return;
+    }
+    const [inH, inM] = checkInTimeStr.split(':').map(Number);
+    const inTime = new Date(record.dateString);
+    inTime.setHours(inH, inM, 0, 0);
+
+    let outTime: number | undefined = undefined;
+    if (checkOutTimeStr) {
+      const [outH, outM] = checkOutTimeStr.split(':').map(Number);
+      const out = new Date(record.dateString);
+      out.setHours(outH, outM, 0, 0);
+      outTime = out.getTime();
+    }
+
+    setIsSubmitting(true);
+    try {
+      await adminMarkPresent({
+        attendanceId: record._id,
+        checkInTime: inTime.getTime(),
+        checkOutTime: outTime,
+        comments
+      });
+      toast.success("Marked as Present");
+      onClose();
+    } catch(err:any) {
+      toast.error(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleMarkAbsent = async () => {
+    if (!reason.trim()) {
+      toast.error("Reason is required");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await adminMarkAbsent({
+        attendanceId: record._id,
+        reason
+      });
+      toast.success("Marked as Absent");
+      onClose();
+    } catch(err:any) {
+      toast.error(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0 }}
@@ -321,6 +389,69 @@ function AttendanceDetailModal({ record, onClose }: { record: any, onClose: () =
               </div>
             </div>
           </div>
+
+          <div className="flex gap-4 mb-8">
+            {record.status === "absent" && (
+                <button 
+                  onClick={() => {
+                    setShowOverrideForm(true);
+                    setOverrideType("to-present");
+                  }}
+                  className="px-6 py-3 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 font-bold text-sm transition-colors"
+                >
+                  Mark as Present Instead
+                </button>
+            )}
+            {(record.status === "present" || record.status === "pending") && (
+                <button 
+                  onClick={() => {
+                    setShowOverrideForm(true);
+                    setOverrideType("to-absent");
+                  }}
+                  className="px-6 py-3 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 font-bold text-sm transition-colors"
+                >
+                  Mark as Absent Instead
+                </button>
+            )}
+          </div>
+
+          {showOverrideForm && overrideType === "to-present" && (
+            <div className="mb-8 p-6 rounded-3xl bg-white/5 border border-emerald-500/30 space-y-4">
+              <h3 className="text-emerald-400 font-bold text-lg">Provide Check-in Details</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-white/40 text-xs font-bold mb-2 block">Check In Time</label>
+                  <input type="time" value={checkInTimeStr} onChange={e => setCheckInTimeStr(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-emerald-500/50" />
+                </div>
+                <div>
+                  <label className="text-white/40 text-xs font-bold mb-2 block">Check Out Time (Optional)</label>
+                  <input type="time" value={checkOutTimeStr} onChange={e => setCheckOutTimeStr(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-emerald-500/50" />
+                </div>
+              </div>
+              <div>
+                <label className="text-white/40 text-xs font-bold mb-2 block">Comments (Required)</label>
+                <textarea value={comments} onChange={e => setComments(e.target.value)} rows={2} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-emerald-500/50" placeholder="e.g. System glitch, employee was actually present" />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button onClick={() => setShowOverrideForm(false)} className="px-4 py-2 rounded-xl text-white/40 hover:text-white transition-colors text-sm font-bold">Cancel</button>
+                <button onClick={handleMarkPresent} disabled={isSubmitting} className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-50">Confirm</button>
+              </div>
+            </div>
+          )}
+
+          {showOverrideForm && overrideType === "to-absent" && (
+            <div className="mb-8 p-6 rounded-3xl bg-white/5 border border-rose-500/30 space-y-4">
+              <h3 className="text-rose-400 font-bold text-lg">Submit Reason for Absence</h3>
+              <div>
+                <label className="text-white/40 text-xs font-bold mb-2 block">Reason (Required)</label>
+                <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-rose-500/50" placeholder="Type reason here..." />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button onClick={() => setShowOverrideForm(false)} className="px-4 py-2 rounded-xl text-white/40 hover:text-white transition-colors text-sm font-bold">Cancel</button>
+                <button onClick={handleMarkAbsent} disabled={isSubmitting} className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-bold text-sm shadow-lg shadow-rose-500/20 transition-all disabled:opacity-50">Submit Reason</button>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-8">
             <div className="space-y-4">

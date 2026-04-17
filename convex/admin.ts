@@ -269,16 +269,21 @@ export const getNotifications = query({
 export const getAbsentReasons = query({
   args: {},
   handler: async (ctx) => {
+    // Safe way to get YYYY-MM-DD in IST
+    const now = new Date();
+    const istTime = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+    const dateString = istTime.toISOString().split("T")[0];
+
     const records = await ctx.db
       .query("attendance")
+      .withIndex("by_dateString", (q) => q.eq("dateString", dateString))
       .filter((q) =>
         q.and(
           q.eq(q.field("status"), "absent"),
           q.neq(q.field("reason"), undefined),
         ),
       )
-      .order("desc")
-      .take(10); // Get latest 10 reasons
+      .order("desc").collect();
 
     return await Promise.all(
       records.map(async (record) => {
@@ -404,4 +409,73 @@ export const updateOTStatusToFalse = mutation({
 
     return { success: true };
   },
+});
+
+export const adminMarkPresent = mutation({
+  args: {
+    attendanceId: v.id("attendance"),
+    checkInTime: v.number(),
+    checkOutTime: v.optional(v.number()),
+    comments: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const record = await ctx.db.get(args.attendanceId);
+    if (!record) throw new Error("Attendance record not found");
+    
+    await ctx.db.patch(args.attendanceId, {
+      status: "present",
+      attendanceTime: args.checkInTime,
+      checkoutTime: args.checkOutTime,
+      reason: args.comments, // storing comments in reason field
+    });
+
+    const checkOutStr = args.checkOutTime 
+      ? new Date(args.checkOutTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) 
+      : "Not provided";
+      
+    const bodyText = `Admin provided present for you. Check-out time: ${checkOutStr}. Comments: ${args.comments}`;
+    
+    await ctx.db.insert("notifications", {
+      employeeId: record.employeeId,
+      title: "Attendance Updated to Present",
+      body: bodyText,
+      read: false,
+      createdAt: Date.now()
+    });
+  }
+});
+
+export const adminMarkAbsent = mutation({
+  args: {
+    attendanceId: v.id("attendance"),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const record = await ctx.db.get(args.attendanceId);
+    if (!record) throw new Error("Attendance record not found");
+    
+    await ctx.db.patch(args.attendanceId, {
+      status: "absent",
+      reason: args.reason,
+      attendanceTime: undefined,
+      checkoutTime: undefined,
+      lat: undefined,
+      long: undefined,
+      city: undefined,
+      address: undefined,
+      isOT: undefined,
+      hasOT: undefined,
+      otMinutes: undefined,
+      otDurationMinutes: undefined,
+      autoCheckout: undefined,
+    });
+
+    await ctx.db.insert("notifications", {
+      employeeId: record.employeeId,
+      title: "Attendance Updated to Absent",
+      body: `Admin marked you absent for today. Reason: ${args.reason}`,
+      read: false,
+      createdAt: Date.now()
+    });
+  }
 });
